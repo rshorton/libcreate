@@ -1,0 +1,85 @@
+cmake_minimum_required(VERSION 3.5)
+project(libcreate)
+
+# Default to C99
+if(NOT CMAKE_C_STANDARD)
+  set(CMAKE_C_STANDARD 99)
+endif()
+
+# Default to C++14
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 14)
+endif()
+
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
+
+# find dependencies
+find_package(ament_cmake REQUIRED)
+find_package(Boost REQUIRED)
+find_package(Threads REQUIRED)
+
+# Specify locations of header files
+include_directories(
+  include
+)
+
+add_library(libcreate
+  src/create.cpp
+  src/serial.cpp
+  src/serial_stream.cpp
+  src/serial_query.cpp
+  src/data.cpp
+  src/packet.cpp
+  src/types.cpp
+)
+
+# Declare example executables
+set(EXAMPLES
+  battery_level
+  bumpers
+  cliffs
+  drive_circle
+  leds
+  packets
+  play_song
+  wheeldrop
+)
+
+# Manually link to thread library for build on ARM
+set_property(TARGET libcreate PROPERTY COMPILE_OPTIONS "-pthread")
+set_property(TARGET libcreate PROPERTY INTERFACE_COMPILE_OPTIONS "-pthread")
+
+foreach(EXAMPLE ${EXAMPLES})
+  add_executable(${EXAMPLE} examples/${EXAMPLE}.cpp)
+
+ # ament_target_dependencies(${EXAMPLE} Boost_LIBRARIES  Threads_LIBRARIES)
+  target_link_libraries(${EXAMPLE}
+    ${Boost_LIBRARIES}
+    libcreate)
+  set_property(TARGET ${EXAMPLE} PROPERTY COMPILE_OPTIONS "-pthread")
+  set_property(TARGET ${EXAMPLE}  PROPERTY INTERFACE_COMPILE_OPTIONS "-pthread")
+
+endforeach()
+
+ament_export_targets(export_libcreate HAS_LIBRARY_TARGET)
+ament_export_dependencies(Boost, Thread)
+ament_export_include_directories(include)
+
+install(
+  DIRECTORY include/create
+  DESTINATION include
+)
+
+install(
+  TARGETS libcreate
+  EXPORT export_libcreate
+  LIBRARY DESTINATION lib
+  ARCHIVE DESTINATION lib
+  RUNTIME DESTINATION bin
+  INCLUDES DESTINATION include
+)
+
+ament_package()
+
