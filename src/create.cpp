@@ -23,7 +23,11 @@
 
 #define TEST_PIN1	16
 #define TEST_PIN2	26
-#define TEST_PIN3   2
+#define TEST_PIN3 2
+
+// Define to average the velocity calc
+#define AVE_VEL
+#define AVE_DT
 
 namespace create {
 
@@ -110,22 +114,18 @@ namespace create {
     return C;
   }
 
-#if 1
-int ave_head = 0;
-int ave_cnt = 0;
-ave_smpl_t vel_ave[NUM_VEL_AVE_SMPLS];
+#ifdef AVE_DT
 std::list<float> delta_times;
 const size_t NUM_DELTA_TIMES = 100;
 float delta_time_sum = 0;
+#endif
 
+#ifdef AVE_VEL
 std::list<float> vel_x_hist;
 std::list<float> vel_yaw_hist;
 const size_t NUM_VEL_HIST_SAMPLES = 8;
 float vel_x_sum;
 float vel_yaw_sum;
-
-bool pinState = false;
-
 #endif
 
   void Create::onData() {
@@ -134,34 +134,27 @@ bool pinState = false;
         // Initialize tick counts
         prevTicksLeft = GET_DATA(ID_LEFT_ENC);
         prevTicksRight = GET_DATA(ID_RIGHT_ENC);
-
-std::cout << "init ticks\n";
       }
       prevOnDataTime = std::chrono::steady_clock::now();
-//      prevOnDataTime = std::chrono::system_clock::now();
 
       firstOnData = false;
 
+#ifdef AVE_DT
       delta_time_sum = 0;
       delta_times.clear();
+#endif      
 
+#ifdef AVE_VEL
       vel_x_sum = 0;
       vel_x_hist.clear();
 
       vel_yaw_sum = 0;
       vel_yaw_hist.clear();
-
-#if 1
-      //vel_x = 0.0;
-      //vel_yaw = 0.0;
-      ave_head = 0;
-      ave_cnt = 0;
-#endif
+#endif      
     }
 
     // Get current time
     auto curTime = std::chrono::steady_clock::now();
-//    auto curTime = std::chrono::system_clock::now();
     float dt = static_cast<std::chrono::duration<float>>(curTime - prevOnDataTime).count();
     float deltaDist = 0.0;
     float deltaX = 0.0;
@@ -171,11 +164,13 @@ std::cout << "init ticks\n";
     float rightWheelDist = 0.0;
     float wheelDistDiff = 0.0;
 
-    // moved from below
     prevOnDataTime = curTime;
 
-//	digitalWrite(TEST_PIN2, LOW);
+#ifdef GPIO_DEBUG
+    digitalWrite(TEST_PIN2, LOW);
+#endif
 
+#ifdef AVE_DT
     delta_times.push_front(dt);
     delta_time_sum += dt;
     if (delta_times.size() > NUM_DELTA_TIMES) {
@@ -183,17 +178,11 @@ std::cout << "init ticks\n";
     	delta_times.pop_back();
     }
     dt = delta_time_sum/(float)delta_times.size();
-
-#if 0
-    std::cout << "ave dt= " << std::fixed << std::setw(9) << dt
-    		  << "\n";
-#endif
+#endif    
 
 #ifdef GPIO_DEBUG
     if (dt < 0.002) {
     	digitalWrite(TEST_PIN3, LOW);
-//    	digitalWrite(TEST_PIN1, pinState? LOW: HIGH);
-//    	pinState = !pinState;
     }
 #endif
 
@@ -235,64 +224,55 @@ std::cout << "init ticks\n";
       rightWheelDist = deltaDist + (wheelDistDiff / 2.0);
     } else if (model.getVersion() >= V_3) {
       // Get cumulative ticks (wraps around at 65535)
-#if 0
-      uint16_t totalTicksLeft = GET_DATA(ID_LEFT_ENC);
-      uint16_t totalTicksRight = GET_DATA(ID_RIGHT_ENC);
-#else
       int16_t totalTicksLeft = GET_DATA(ID_LEFT_ENC);
       int16_t totalTicksRight = GET_DATA(ID_RIGHT_ENC);
-#endif
+
       // Compute ticks since last update
-#if 0
-      int ticksLeft = totalTicksLeft - prevTicksLeft;
-      int ticksRight = totalTicksRight - prevTicksRight;
-#else
       int16_t ticksLeft = totalTicksLeft - prevTicksLeft;
       int16_t ticksRight = totalTicksRight - prevTicksRight;
-#endif
+
       prevTicksLeft = totalTicksLeft;
       prevTicksRight = totalTicksRight;
 
-#if 0
+#ifdef DEBUG_SPEW
+      int16_t totalLeftRightDelta = ticksLeft - ticksRight;
+
       static int16_t last_ticksLeft = 0;
       static int16_t last_ticksRight = 0;
       static int16_t last_totalTicksLeft = 0;
       static int16_t last_totalTicksRight = 0;
-#endif
-#if 0
-if (last_ticksLeft != ticksLeft ||
-    last_ticksRight != ticksRight ||
-    last_totalTicksLeft != totalTicksLeft ||
-    last_totalTicksRight != totalTicksRight) {
-
-    std::cout << "totL " << totalTicksLeft << ", tl " << ticksLeft << ", totR " << totalTicksRight << ", tr " << ticksRight << "\n";
-
-    last_ticksLeft = ticksLeft;
-    last_ticksRight = ticksRight;
-    last_totalTicksLeft = totalTicksLeft;
-    last_totalTicksRight = totalTicksRight;
-}
-#endif
-
-#if 0
-      // Handle wrap around
-      if (fabs(ticksLeft) > 0.9 * util::V_3_MAX_ENCODER_TICKS) {
-        ticksLeft = (ticksLeft % util::V_3_MAX_ENCODER_TICKS) + 1;
-
-std::cout << "ticksleft wrap!!!!!!!!!!!  " << ticksLeft << "\n";
+      static bool first_time = true;
+      static int16_t firstTotalLeftRightDelta = 0;
+      if (first_time) {
+        firstTotalLeftRightDelta = totalLeftRightDelta;
+      } else {
+        totalLeftRightDelta -= firstTotalLeftRightDelta;
       }
-      if (fabs(ticksRight) > 0.9 * util::V_3_MAX_ENCODER_TICKS) {
-        ticksRight = (ticksRight % util::V_3_MAX_ENCODER_TICKS) + 1;
-std::cout << "ticksright wrap!!!!!!!!!!!  " << ticksLeft << "\n";
 
+#endif
+#ifdef DEBUG_SPEW
+      if (last_ticksLeft != ticksLeft ||
+          last_ticksRight != ticksRight ||
+          last_totalTicksLeft != totalTicksLeft ||
+          last_totalTicksRight != totalTicksRight) {
+
+          std::cerr << "totL " << totalTicksLeft << ", tl " << ticksLeft << ", totR " << totalTicksRight
+                    << ", tr " << ticksRight << ", total_tr_delta " << totalLeftRightDelta << "\n";
+
+          last_ticksLeft = ticksLeft;
+          last_ticksRight = ticksRight;
+          last_totalTicksLeft = totalTicksLeft;
+          last_totalTicksRight = totalTicksRight;
       }
 #endif
 
-#if 0
-      std::cout << "ticksLeft= " << std::fixed << std::setw(9) << ticksLeft
+#ifdef DEBUG_SPEW
+      if (ticksLeft > 0 || ticksRight > 0) {
+        std::cerr << "ticksLeft= " << std::fixed << std::setw(9) << ticksLeft
       		  << ", ticksRight= " << std::fixed << std::setw(9) << ticksRight
       		  << ", dt= " << std::setw(9)  << dt
       		  << "\n";
+      }            
 #endif
 
       // Compute distance travelled by each wheel
@@ -306,14 +286,11 @@ std::cout << "ticksright wrap!!!!!!!!!!!  " << ticksLeft << "\n";
       deltaYaw = wheelDistDiff / model.getAxleLength();
     }
 
-#if 0
-    std::cout << "leftWheelDist= " << std::fixed << std::setw(9) << leftWheelDist
+#ifdef DEBUG_SPEW
+    std::cerr << "leftWheelDist= " << std::fixed << std::setw(9) << leftWheelDist
     		  << ", rightWheelDist= " << std::fixed << std::setw(9) << rightWheelDist
-    		  << ", dt= " << std::setw(9)  << dt
     		  << "\n";
 #endif
-//if (dt < 0.005) {
-
 
     measuredLeftVel = leftWheelDist / dt;
     measuredRightVel = rightWheelDist / dt;
@@ -331,6 +308,13 @@ std::cout << "ticksright wrap!!!!!!!!!!!  " << ticksLeft << "\n";
     totalLeftDist += leftWheelDist;
     totalRightDist += rightWheelDist;
 
+#ifdef DEBUG_SPEW
+    std::cerr << "totalLeftDist= " << std::fixed << std::setw(9) << totalLeftDist
+    		  << ", totalRightDist= " << std::fixed << std::setw(9) << totalRightDist
+    		  << ", delta= " << std::fixed << std::setw(9) << (totalLeftDist + totalRightDist)
+          << std::endl;
+#endif
+
     if (fabs(dt) > util::EPS) {
       vel.x = deltaDist / dt;
       vel.y = 0.0;
@@ -341,32 +325,7 @@ std::cout << "ticksright wrap!!!!!!!!!!!  " << ticksLeft << "\n";
       vel.yaw = 0.0;
     }
 
-#if 0
-    vel_ave[ave_head].deltaDist = deltaDist;
-    vel_ave[ave_head].deltaYaw = deltaYaw;
-    vel_ave[ave_head].dt = dt;
-
-    if (ave_cnt < NUM_VEL_AVE_SMPLS) {
-        ave_cnt++;
-    }
-    if (++ave_head >= NUM_VEL_AVE_SMPLS) {
-        ave_head = 0;
-    }
-
-    float sum_x = 0;
-    float sum_yaw = 0;
-    float sum_dt = 0;
-    for (int i = 0; i < ave_cnt; i++) {
-        sum_x += vel_ave[i].deltaDist;
-        sum_yaw += vel_ave[i].deltaYaw;
-        sum_dt += vel_ave[i].dt;
-    }
-    if (fabs(sum_dt) > util::EPS) {
-        vel.x = sum_x/sum_dt;
-        vel.yaw = sum_yaw/sum_dt;
-    }
-#endif
-#if 1
+#ifdef AVE_VEL
     vel_x_hist.push_front(vel.x);
     vel_x_sum += vel.x;
     if (vel_x_hist.size() > NUM_VEL_HIST_SAMPLES) {
@@ -383,8 +342,8 @@ std::cout << "ticksright wrap!!!!!!!!!!!  " << ticksLeft << "\n";
     }
     vel.yaw = vel_yaw_sum/(float)vel_yaw_hist.size();
 
-#if 0
-    std::cout << "vel.x= " << std::fixed << std::setw(9) << vel.x
+#ifdef DEBUG_SPEW
+    std::cerr << "vel.x= " << std::fixed << std::setw(9) << vel.x
 		  << ", deltadist= " << std::setw(9) <<  deltaDist
 		  << ", dt= " << std::setw(9)  << dt
 		  << ", vel.yaw= " << std::fixed << std::setw(9) << vel.yaw
@@ -458,20 +417,14 @@ std::cout << "ticksright wrap!!!!!!!!!!!  " << ticksLeft << "\n";
     pose.y += deltaY;
     pose.yaw = util::normalizeAngle(pose.yaw + deltaYaw);
 
-    // move to above
-//    prevOnDataTime = curTime;
-
     // Make user registered callbacks, if any
     // TODO
+
 #ifdef GPIO_DEBUG
    if (dt < 0.002) {
 	   digitalWrite(TEST_PIN3, HIGH);
-//    digitalWrite(TEST_PIN1, pinState? LOW: HIGH);
-//    pinState = !pinState;
    }
 #endif
-//	digitalWrite(TEST_PIN2, HIGH);
-
   }
 
   bool Create::connect(const std::string& port, const int& baud) {
@@ -499,12 +452,6 @@ std::cout << "ticksright wrap!!!!!!!!!!!  " << ticksLeft << "\n";
     serial->disconnect();
     firstOnData = true;
   }
-
-  //void Create::reset() {
-  //  serial->sendOpcode(OC_RESET);
-  //  serial->reset(); // better
-    // TODO : Should we request reading packets again?
-  //}
 
   bool Create::setMode(const CreateMode& mode) {
     if (model.getVersion() == V_1){
@@ -563,9 +510,6 @@ std::cout << "ticksright wrap!!!!!!!!!!!  " << ticksLeft << "\n";
   bool Create::driveRadius(const float& vel, const float& radius) {
     // Bound velocity
     float boundedVel = BOUND_CONST(vel, -model.getMaxVelocity(), model.getMaxVelocity());
-
-//std::cout << "driveRadius: vel= " << vel << ", radius= " << radius << "\n";
-
 
     // Expects each parameter as two bytes each and in millimeters
     int16_t vel_mm = roundf(boundedVel * 1000);
@@ -661,7 +605,7 @@ std::cout << "ticksright wrap!!!!!!!!!!!  " << ticksLeft << "\n";
     float leftVel = xVel - ((model.getAxleLength() / 2.0) * angularVel);
     float rightVel = xVel + ((model.getAxleLength() / 2.0) * angularVel);
 
-using namespace std::chrono;
+    using namespace std::chrono;
     static bool bFirstTime = true;
     static high_resolution_clock::time_point t1;
     if (bFirstTime) {
@@ -671,7 +615,7 @@ using namespace std::chrono;
     high_resolution_clock::time_point tnow = high_resolution_clock::now();
     duration<double, std::milli> time_span = tnow - t1;
 
-//    std::cout << "drive: x= " << xVel << ", yaw= " << angularVel << ", t= "
+//    std::cerr << "drive: x= " << xVel << ", yaw= " << angularVel << ", t= "
 //          << time_span.count() << "\n";
 
     return driveWheels(leftVel, rightVel);
