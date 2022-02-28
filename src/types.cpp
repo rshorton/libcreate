@@ -48,5 +48,9 @@ namespace create {
 
   RobotModel RobotModel::ROOMBA_400(V_1, 0.258, 57600);
   RobotModel RobotModel::CREATE_1(V_2, 0.258, 57600);
-  RobotModel RobotModel::CREATE_2(V_3, 0.235, 115200, 0.5, 0.072);
+
+  // Fine-tuned size to get laser scan to be stable while continuously
+  // rotating robot with Rviz2 showing laser scan and odom frame.
+  // Original radius setting = 0.072
+  RobotModel RobotModel::CREATE_2(V_3, 0.235, 115200, 0.5, 0.07325);
 }
